@@ -1,6 +1,7 @@
 import uasyncio
 import os
 import ujson
+import led_manager
 
 # Global State
 custom_message = ""
@@ -31,7 +32,6 @@ async def handle_client(reader, writer):
         # --- API: Get/Set Message ---
         if path.startswith("/api/message"):
             if method == "POST":
-                # Find body
                 try:
                     headers, body = req_str.split("\r\n\r\n", 1)
                     data = ujson.loads(body)
@@ -41,10 +41,28 @@ async def handle_client(reader, writer):
                 except:
                     await send_response(writer, "400 Bad Request", "application/json", '{"error": "invalid json"}'.encode())
             else:
-                # GET
                 resp = ujson.dumps({"message": custom_message})
                 await send_response(writer, "200 OK", "application/json", resp.encode())
             
+            writer.close()
+            await writer.wait_closed()
+            return
+            
+        # --- API: Settings (LED) ---
+        if path.startswith("/api/settings"):
+            if method == "POST":
+                try:
+                    headers, body = req_str.split("\r\n\r\n", 1)
+                    data = ujson.loads(body)
+                    if "led" in data:
+                        led_manager.toggle(data["led"])
+                    await send_response(writer, "200 OK", "application/json", '{"status": "ok"}'.encode())
+                except:
+                    await send_response(writer, "400 Bad Request", "application/json", '{"error": "invalid json"}'.encode())
+            else:
+                resp = ujson.dumps({"led": led_manager.ENABLED})
+                await send_response(writer, "200 OK", "application/json", resp.encode())
+                
             writer.close()
             await writer.wait_closed()
             return

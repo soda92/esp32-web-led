@@ -1,6 +1,7 @@
 import framebuf
 import weather_api
 import font_zh
+import wifi_manager
 
 # 5x7 bit patterns for numbers 0-9 and :
 # Each tuple is 7 rows of 5 bits
@@ -58,11 +59,6 @@ def draw_screen(epd, time_str, date_str, message=""):
         # Draw a box
         fb.rect(5, 90, 118, 180, 0x00)
         
-        # Word wrap logic is complex, so for now we just draw 
-        # multiple lines if it's long (manual splitting) or just truncate.
-        # Let's assume the user sends "Line1 Line2" separated by spaces or newlines?
-        # Actually `font_zh` doesn't support newlines.
-        
         # Simple Center Draw
         font_zh.draw_text(fb, "Message:", 10, 100)
         
@@ -108,11 +104,10 @@ def draw_screen(epd, time_str, date_str, message=""):
 
     # Footer (System Status)
     fb.hline(0, 280, 128, 0x00)
-    import gc
-    mem_free = gc.mem_free() // 1024
     
-    font_zh.draw_text(fb, "剩余内存:", 5, 282)
-    fb.text(f"{mem_free}k", 75, 285, 0x00)
+    # Draw IP Address (Small font)
+    ip = wifi_manager.ip_address
+    fb.text(f"IP: {ip}", 5, 285, 0x00)
 
     # Send to Display
     epd._command(0x4E, bytearray([0x00]))

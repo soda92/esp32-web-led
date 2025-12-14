@@ -4,18 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ESP8266 Control</title>
-    <!-- Import Vue.js from CDN (Petite-Vue is even smaller, but Vue 3 is fine for cache) -->
+    <!-- Import Vue.js from CDN -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f4f4f9; text-align: center; padding: 20px; }
         .card { background: white; max-width: 400px; margin: 0 auto; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         h1 { margin-bottom: 1.5rem; color: #333; }
-        input { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        input[type="text"] { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
         button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; transition: background 0.2s; }
         button:hover { background: #0056b3; }
         button.secondary { background: #6c757d; margin-top: 10px; }
         button.secondary:hover { background: #5a6268; }
         .status { margin-top: 20px; font-size: 0.9rem; color: #666; }
+        
+        /* Toggle Switch */
+        .toggle-container { display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+        .toggle-label { margin-right: 10px; font-weight: bold; }
+        .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; -webkit-transition: .4s; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; -webkit-transition: .4s; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #2196F3; }
+        input:focus + .slider { box-shadow: 0 0 1px #2196F3; }
+        input:checked + .slider:before { -webkit-transform: translateX(26px); -ms-transform: translateX(26px); transform: translateX(26px); }
     </style>
 </head>
 <body>
@@ -25,6 +36,15 @@
         <div v-if="loading">Loading...</div>
         
         <div v-else>
+            <!-- LED Toggle -->
+            <div class="toggle-container">
+                <span class="toggle-label">LED Status:</span>
+                <label class="switch">
+                    <input type="checkbox" v-model="ledEnabled" @change="toggleLed">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
             <p>Current Message:</p>
             <h2 style="color: #2c3e50; min-height: 1.5em;">{{ currentMessage || '(Empty)' }}</h2>
             
@@ -46,22 +66,32 @@
                 return {
                     currentMessage: '',
                     newMessage: '',
+                    ledEnabled: true,
                     loading: true,
                     sending: false,
                     lastSync: 'Never'
                 }
             },
             mounted() {
-                this.fetchMessage()
+                this.fetchData()
                 // Poll every 5 seconds
-                setInterval(this.fetchMessage, 5000)
+                setInterval(this.fetchData, 5000)
             },
             methods: {
-                async fetchMessage() {
+                async fetchData() {
                     try {
-                        const res = await fetch('/api/message')
-                        const data = await res.json()
-                        this.currentMessage = data.message
+                        // Parallel fetch
+                        const [msgRes, ledRes] = await Promise.all([
+                            fetch('/api/message'),
+                            fetch('/api/settings')
+                        ])
+                        
+                        const msgData = await msgRes.json()
+                        const ledData = await ledRes.json()
+                        
+                        this.currentMessage = msgData.message
+                        this.ledEnabled = ledData.led
+                        
                         this.loading = false
                         this.lastSync = new Date().toLocaleTimeString()
                     } catch (e) {
@@ -83,6 +113,19 @@
                         alert("Failed to send")
                     } finally {
                         this.sending = false
+                    }
+                },
+                async toggleLed() {
+                    try {
+                        await fetch('/api/settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ led: this.ledEnabled })
+                        })
+                    } catch (e) {
+                        alert("Failed to toggle LED")
+                        // Revert switch on error
+                        this.ledEnabled = !this.ledEnabled
                     }
                 },
                 async clearMessage() {

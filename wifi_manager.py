@@ -3,7 +3,11 @@ import config
 import led_manager
 import time
 
+# Global State
+ip_address = "0.0.0.0"
+
 def connect():
+    global ip_address
     print("Connecting to WiFi...")
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
@@ -20,7 +24,8 @@ def connect():
             print(".")
 
     if wlan.isconnected():
-        print(f"Connected! IP: {wlan.ifconfig()[0]}")
+        ip_address = wlan.ifconfig()[0]
+        print(f"Connected! IP: {ip_address}")
         led_manager.led_wifi_success()
         return True
     else:

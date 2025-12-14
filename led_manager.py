@@ -9,15 +9,26 @@ NUM_LEDS = 4
 
 # Global Brightness Control (0.0 to 1.0)
 GLOBAL_BRIGHTNESS = 0.1
+ENABLED = True
 
 led_pin = machine.Pin(PIN_LEDS, machine.Pin.OUT)
 pixels = neopixel.NeoPixel(led_pin, NUM_LEDS)
+
+def toggle(state):
+    global ENABLED
+    ENABLED = state
+    if not ENABLED:
+        set_led(0, 0, 0) # Force off immediately
 
 def set_led(r, g, b):
     """
     Set all LEDs with global brightness scaling.
     Inputs (r, g, b) should be 0-255.
     """
+    if not ENABLED:
+        # Override to OFF, but do not change logic elsewhere
+        r, g, b = 0, 0, 0
+    
     # Apply global brightness scaling
     r = int(r * GLOBAL_BRIGHTNESS)
     g = int(g * GLOBAL_BRIGHTNESS)
