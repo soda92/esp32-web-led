@@ -89,7 +89,8 @@ def deploy(ip):
     with open(zip_path, "rb") as f:
         zip_data = f.read()
         
-    print(f"Uploading {len(zip_data)} bytes to http://{ip}/api/ota...")
+    size_kb = len(zip_data) / 1024
+    print(f"Uploading {size_kb:.1f} KB to http://{ip}/api/ota...")
     
     headers = {
         "X-Signature": sig_bytes.hex(),

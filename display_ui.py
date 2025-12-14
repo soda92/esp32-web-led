@@ -114,8 +114,8 @@ def draw_image(epd, buf):
         print(f"Load Image Error: {e}")
         return False
 
-def draw_screen(epd, time_str, date_str, message=""):
-    print(f"Drawing: {time_str} Msg: {message}")
+def draw_screen(epd, time_str, date_str, message="", partial=False):
+    print(f"Drawing: {time_str} Msg: {message} Partial: {partial}")
     
     # 1. Clear RAM for the big buffer
     gc.collect()
@@ -149,7 +149,14 @@ def draw_screen(epd, time_str, date_str, message=""):
         epd._command(0x4F, bytearray([0x00, 0x00]))
         
         epd.set_frame_memory(buf)
-        epd.display_frame()
+        
+        if partial:
+            # Run OTP Partial twice to improve contrast
+            epd.display_frame_otp_partial()
+            epd.display_frame_otp_partial()
+            epd.display_frame_otp_partial()
+        else:
+            epd.display_frame()
         
     except MemoryError:
         print("Display Error: Out of RAM!")

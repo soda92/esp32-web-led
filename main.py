@@ -47,6 +47,7 @@ async def weather_task():
 async def ui_task():
     last_time_str = ""
     last_msg_str = ""
+    refresh_count = 0
     
     while True:
         t_str, d_str, _ = get_local_time()
@@ -56,10 +57,24 @@ async def ui_task():
         msg_changed = (msg_str != last_msg_str)
         
         if time_changed or msg_changed:
+            partial = False
+            
+            # Use Partial if only time changed and count < 30
+            if time_changed and not msg_changed:
+                partial = True
+                refresh_count += 1
+                if refresh_count > 30: # Full refresh every 30 updates (30 mins)
+                    partial = False
+                    refresh_count = 0
+            else:
+                # Message changed, full refresh
+                refresh_count = 0
+                partial = False
+
             if time_changed: led_manager.led_minute_update()
             if msg_changed: led_manager.led_web_request()
             
-            display_ui.draw_screen(epd, t_str, d_str, msg_str)
+            display_ui.draw_screen(epd, t_str, d_str, msg_str, partial=partial)
             led_manager.led_off()
             
             last_time_str = t_str

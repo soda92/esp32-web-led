@@ -4,6 +4,13 @@ import time
 EPD_WIDTH = 128
 EPD_HEIGHT = 296
 
+# Partial Refresh LUT (Generic 2.9")
+LUT_PARTIAL = bytearray([
+    0x10, 0x18, 0x18, 0x08, 0x18, 0x18, 0x08, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x13, 0x14, 0x44, 0x12, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+])
 
 class EPD:
     def __init__(self, spi, cs, dc, busy, rst=None):
@@ -79,11 +86,23 @@ class EPD:
             time.sleep_ms(2000)  # type: ignore
 
     def set_frame_memory(self, image):
-        self._command(0x24)  # WRITE_RAM
+        self._command(0x24)  # WRITE_RAM (Black/White)
         self._data(image)
 
     def display_frame(self):
         self._command(0x22, bytearray([0xF7]))
+        self._command(0x20)
+        self.wait_until_idle()
+
+    def display_frame_partial(self):
+        self._command(0x32, LUT_PARTIAL)
+        self._command(0x22, bytearray([0xC7]))
+        self._command(0x20)
+        self.wait_until_idle()
+
+    def display_frame_otp_partial(self):
+        # Try Standard Fast Mode (0xFF loads OTP LUT Mode 2)
+        self._command(0x22, bytearray([0xFF])) 
         self._command(0x20)
         self.wait_until_idle()
 
