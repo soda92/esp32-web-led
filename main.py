@@ -26,28 +26,46 @@ epd = il3820.EPD(spi, cs, dc, busy, rst=None)
 # GPIO 0 is Pin D3 on NodeMCU
 PIN_LEDS = 0
 NUM_LEDS = 4
+
+# Global Brightness Control (0.0 to 1.0)
+# Adjust this to control the overall intensity.
+GLOBAL_BRIGHTNESS = 0.1
+
 led_pin = machine.Pin(PIN_LEDS, machine.Pin.OUT)
 pixels = neopixel.NeoPixel(led_pin, NUM_LEDS)
 
-
 def set_led(r, g, b):
-    """Set all 4 LEDs to a specific color instantly."""
+    """
+    Set all LEDs with global brightness scaling.
+    Inputs (r, g, b) should be 0-255.
+    """
+    # Apply global brightness scaling
+    r = int(r * GLOBAL_BRIGHTNESS)
+    g = int(g * GLOBAL_BRIGHTNESS)
+    b = int(b * GLOBAL_BRIGHTNESS)
+    
+    # Clamp to ensure valid range
+    r = max(0, min(255, r))
+    g = max(0, min(255, g))
+    b = max(0, min(255, b))
+    
     for i in range(NUM_LEDS):
         pixels[i] = (r, g, b)
     pixels.write()
 
+def led_off():
+    set_led(0, 0, 0)
 
 def breathe(r, g, b, cycles=1, speed=0.05):
     """
     Fade a color in and out smoothly.
-    r, g, b: Max brightness (0-255)
-    cycles: How many times to breathe
-    speed: Delay between steps (lower is faster)
+    r, g, b: Target max color (0-255)
     """
     for _ in range(cycles):
         # Fade In
         for i in range(0, 101, 5):  # 0% to 100%
             factor = i / 100
+            # We pass full values to set_led, which handles global brightness
             set_led(int(r * factor), int(g * factor), int(b * factor))
             time.sleep(speed)
         # Fade Out
@@ -55,6 +73,41 @@ def breathe(r, g, b, cycles=1, speed=0.05):
             factor = i / 100
             set_led(int(r * factor), int(g * factor), int(b * factor))
             time.sleep(speed)
+    led_off()
+
+# --- LED State Functions ---
+
+def led_wifi_wait():
+    # Breathe Yellow
+    breathe(255, 200, 0, cycles=1, speed=0.02)
+
+def led_wifi_success():
+    # Flash Green
+    for _ in range(3):
+        set_led(0, 255, 0)
+        time.sleep(0.1)
+        led_off()
+        time.sleep(0.1)
+
+def led_wifi_fail():
+    set_led(255, 0, 0) # Red
+
+def led_syncing():
+    set_led(0, 0, 255) # Blue
+
+def led_heartbeat():
+    # Subtle White flash
+    set_led(64, 64, 64) 
+    time.sleep(0.1)
+    led_off()
+
+def led_minute_update():
+    # Cyan
+    set_led(0, 255, 255)
+
+def led_web_request():
+    # Blue
+    set_led(0, 0, 255)
 
 
 # Global Weather Cache
@@ -69,27 +122,23 @@ def connect_wifi():
     if not wlan.isconnected():
         wlan.connect(WIFI_SSID, WIFI_PASS)
 
-        # Wait up to 20 seconds, breathing Yellow
+        # Wait up to 20 seconds
         for _ in range(20):
             if wlan.isconnected():
                 break
-            # Breathe Yellow while waiting (approx 1 sec per cycle)
-            breathe(20, 20, 0, cycles=1, speed=0.02)
+            # Visual feedback
+            led_wifi_wait()
             print(".")
 
     if wlan.isconnected():
         print(f"Connected! IP: {wlan.ifconfig()[0]}")
-        # Flash Green 3 times to indicate success
-        for _ in range(3):
-            set_led(0, 50, 0)
-            time.sleep(0.1)
-            set_led(0, 0, 0)
-            time.sleep(0.1)
+        led_wifi_success()
         return True
     else:
         print("WiFi Connection Failed")
-        set_led(50, 0, 0)  # Solid Red for failure
+        led_wifi_fail()
         return False
+
 
 
 def sync_time():
@@ -193,12 +242,12 @@ def main():
     print("Init...")
     epd.init()
 
-    # Try to connect (will breathe yellow)
+    # Try to connect
     if connect_wifi():
-        set_led(0, 0, 50)  # Blue while initial syncing
+        led_syncing()
         sync_time()
         update_weather()
-        set_led(0, 0, 0)  # Off
+        led_off()
 
     # Initial Draw
     time_str, date_str, _ = get_local_time()
@@ -208,11 +257,7 @@ def main():
 
     while True:
         # --- LOOP REACTION: Heartbeat ---
-        # Every 5 seconds, flash very dim white briefly
-        # This tells you the board hasn't crashed.
-        set_led(2, 2, 2)
-        time.sleep(0.1)
-        set_led(0, 0, 0)
+        led_heartbeat()
 
         # Sleep the rest of the 5 seconds
         time.sleep(4.9)
@@ -221,20 +266,19 @@ def main():
 
         if t_str != last_time_str:
             # --- LOOP REACTION: Update Start ---
-            # Minute changed! Turn on Dim Cyan
-            set_led(0, 10, 10)
+            led_minute_update()
 
             last_time_str = t_str
 
-            # If weather updates, it might take longer, so turn Blue
+            # If weather updates, it might take longer
             if time.time() - weather_cache["last_update"] >= 900:
-                set_led(0, 0, 20)  # Blue for web request
+                led_web_request()
 
             update_weather()
             draw_screen(t_str, d_str)
 
             # --- LOOP REACTION: Update Done ---
-            set_led(0, 0, 0)  # Turn off LEDs
+            led_off()
 
 
 if __name__ == "__main__":
