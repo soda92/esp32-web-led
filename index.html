@@ -68,6 +68,11 @@
                 </div>
             </div>
 
+            <!-- Storage Info -->
+            <div style="font-size: 0.8rem; color: #888; margin-bottom: 20px;">
+                Storage: {{ (storage.free / 1024).toFixed(1) }} KB free / {{ (storage.total / 1024).toFixed(1) }} KB total
+            </div>
+
             <p>Current Message:</p>
             <h2 style="color: #2c3e50; min-height: 1.5em;">{{ currentMessage || '(Empty)' }}</h2>
             
@@ -93,6 +98,7 @@
                     brightness: 0.1,
                     ledMode: 0, // 0=Auto, 1=Manual
                     ledColors: [[0,0,0], [0,0,0], [0,0,0], [0,0,0]],
+                    storage: { free: 0, total: 0 },
                     loading: true,
                     sending: false,
                     lastSync: 'Never'
@@ -105,6 +111,7 @@
             methods: {
                 async fetchData() {
                     try {
+                        // Parallel fetch
                         const [msgRes, ledRes] = await Promise.all([
                             fetch('/api/message'),
                             fetch('/api/settings')
@@ -119,6 +126,8 @@
                         this.brightness = ledData.brightness
                         this.ledMode = ledData.mode
                         this.ledColors = ledData.colors || [[0,0,0],[0,0,0],[0,0,0],[0,0,0]]
+                        this.storage.free = ledData.storage_free || 0
+                        this.storage.total = ledData.storage_total || 0
                         
                         this.loading = false
                         this.lastSync = new Date().toLocaleTimeString()

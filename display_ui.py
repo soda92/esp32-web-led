@@ -2,6 +2,7 @@ import framebuf
 import weather_api
 import font_zh
 import wifi_manager
+import gc
 
 # 5x7 bit patterns for numbers 0-9 and :
 # Each tuple is 7 rows of 5 bits
@@ -19,6 +20,16 @@ BIG_DIGITS = {
     ':': (0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00),
     ' ': (0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00),
 }
+
+# Pre-allocate buffer to avoid MemoryError (fragmentation)
+# 128 * 296 / 8 = 4736 bytes
+try:
+    buf = bytearray(128 * 296 // 8)
+    fb = framebuf.FrameBuffer(buf, 128, 296, framebuf.MONO_HLSB)
+except MemoryError:
+    print("CRITICAL: Failed to allocate framebuffer!")
+    # We might need to reduce size or reboot
+    raise
 
 def draw_big_char(fb, char, x, y, scale=3):
     """Draws a single character from BIG_DIGITS scaled up."""
@@ -42,9 +53,10 @@ def draw_big_text(fb, text, x, y, scale=3):
 def draw_screen(epd, time_str, date_str, message=""):
     print(f"Drawing: {time_str} Msg: {message}")
     
-    # Create a buffer (128 * 296 / 8 = 4736 bytes)
-    buf = bytearray(128 * 296 // 8)
-    fb = framebuf.FrameBuffer(buf, 128, 296, framebuf.MONO_HLSB)
+    # Garbage collect before large ops
+    gc.collect()
+    
+    # Clear the existing buffer
     fb.fill(0xFF) # White background
 
     # Top Bar (Date)
@@ -75,12 +87,7 @@ def draw_screen(epd, time_str, date_str, message=""):
             
     else:
         # --- WEATHER MODE ---
-        # Weather Box (Visual separator optional, let's remove the box outline for a cleaner look or keep it?)
-        # Let's keep the area clear but remove the rect outline to let text breathe
-        # fb.rect(0, 80, 108, 60, 0x00)
-        
         # 1. Location: Beijing (Centered)
-        # "北京" is 32px wide. Screen 128. (128-32)/2 = 48
         font_zh.draw_text(fb, "北京", 48, 90)
         
         # 2. Temp (Centered)
@@ -91,8 +98,6 @@ def draw_screen(epd, time_str, date_str, message=""):
         
         # 3. Condition (Chinese) (Centered)
         desc = weather_api.cache["desc"]
-        # Assuming desc is all Chinese chars (16px each)
-        # Note: If it mixes ASCII it might be off, but usually it's 1-3 Chinese chars
         desc_w = len(desc) * 16
         desc_x = (128 - desc_w) // 2
         font_zh.draw_text(fb, desc, desc_x, 126)
@@ -112,18 +117,16 @@ def draw_screen(epd, time_str, date_str, message=""):
             y_pos += 15
 
     # --- GAP FILLER (RAM) ---
-    import gc
     mem_free = gc.mem_free() // 1024
     ram_str = f"RAM: {mem_free} KB"
     ram_w = len(ram_str) * 8
     ram_x = (128 - ram_w) // 2
-    # Position in the gap (approx y=230 to 270)
     fb.text(ram_str, ram_x, 240, 0x00)
 
     # Footer (System Status)
     fb.hline(0, 280, 128, 0x00)
     
-    # Draw IP Address (No prefix, start at edge)
+    # Draw IP Address
     ip = wifi_manager.ip_address
     fb.text(ip, 0, 285, 0x00)
 
