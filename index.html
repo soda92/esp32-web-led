@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP8266 Control</title>
+    <!-- Import Vue.js from CDN (Petite-Vue is even smaller, but Vue 3 is fine for cache) -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f4f4f9; text-align: center; padding: 20px; }
+        .card { background: white; max-width: 400px; margin: 0 auto; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { margin-bottom: 1.5rem; color: #333; }
+        input { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; transition: background 0.2s; }
+        button:hover { background: #0056b3; }
+        button.secondary { background: #6c757d; margin-top: 10px; }
+        button.secondary:hover { background: #5a6268; }
+        .status { margin-top: 20px; font-size: 0.9rem; color: #666; }
+    </style>
+</head>
+<body>
+    <div id="app" class="card">
+        <h1>📲 E-Ink Messenger</h1>
+        
+        <div v-if="loading">Loading...</div>
+        
+        <div v-else>
+            <p>Current Message:</p>
+            <h2 style="color: #2c3e50; min-height: 1.5em;">{{ currentMessage || '(Empty)' }}</h2>
+            
+            <input type="text" v-model="newMessage" placeholder="Type a message..." @keyup.enter="updateMessage">
+            <button @click="updateMessage" :disabled="sending">{{ sending ? 'Sending...' : 'Update Display' }}</button>
+            <button class="secondary" @click="clearMessage">Clear</button>
+        </div>
+
+        <div class="status">
+            Last Sync: {{ lastSync }}
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            data() {
+                return {
+                    currentMessage: '',
+                    newMessage: '',
+                    loading: true,
+                    sending: false,
+                    lastSync: 'Never'
+                }
+            },
+            mounted() {
+                this.fetchMessage()
+                // Poll every 5 seconds
+                setInterval(this.fetchMessage, 5000)
+            },
+            methods: {
+                async fetchMessage() {
+                    try {
+                        const res = await fetch('/api/message')
+                        const data = await res.json()
+                        this.currentMessage = data.message
+                        this.loading = false
+                        this.lastSync = new Date().toLocaleTimeString()
+                    } catch (e) {
+                        console.error("Fetch error", e)
+                    }
+                },
+                async updateMessage() {
+                    if (!this.newMessage) return
+                    this.sending = true
+                    try {
+                        await fetch('/api/message', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message: this.newMessage })
+                        })
+                        this.currentMessage = this.newMessage
+                        this.newMessage = ''
+                    } catch (e) {
+                        alert("Failed to send")
+                    } finally {
+                        this.sending = false
+                    }
+                },
+                async clearMessage() {
+                    this.newMessage = ''
+                    await this.updateMessage()
+                }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>

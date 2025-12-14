@@ -38,8 +38,8 @@ def draw_big_text(fb, text, x, y, scale=3):
         draw_big_char(fb, char, cursor_x, y, scale)
         cursor_x += (6 * scale) # Advance cursor (5 width + 1 spacing)
 
-def draw_screen(epd, time_str, date_str):
-    print(f"Drawing: {time_str}")
+def draw_screen(epd, time_str, date_str, message=""):
+    print(f"Drawing: {time_str} Msg: {message}")
     
     # Create a buffer (128 * 296 / 8 = 4736 bytes)
     buf = bytearray(128 * 296 // 8)
@@ -50,49 +50,68 @@ def draw_screen(epd, time_str, date_str):
     fb.fill_rect(0, 0, 128, 24, 0x00)
     fb.text(date_str, 25, 8, 0xFF)
 
-    # Big Time (Using Custom Scaled Font)
-    # Scale 3 makes each digit 15x21 pixels
-    # 5 chars (HH:MM) * 18px width = ~90px total width
-    # Centered: (128 - 90) / 2 = 19
+    # Big Time (Always Visible)
     draw_big_text(fb, time_str, 19, 40, scale=3)
 
-    # Weather Box
-    fb.rect(10, 80, 108, 60, 0x00)
-    
-    # Location: Beijing
-    font_zh.draw_text(fb, "北京", 15, 90)
-    
-    # Temp
-    fb.text(f"{weather_api.cache['temp']} C", 60, 94, 0x00)
-    
-    # Condition (Chinese)
-    desc = weather_api.cache["desc"]
-    font_zh.draw_text(fb, desc, 15, 115)
-    
-    # Forecast Section (Start at Y=150)
-    y_pos = 150
-    # Title: Weather Forecast
-    font_zh.draw_text(fb, "天气预报", 10, y_pos)
-    
-    fb.hline(10, y_pos + 20, 108, 0x00)
-    y_pos += 25
-    
-    for day in weather_api.cache.get("forecast", []):
-        # Format: "10-27: 10/22 C"
-        d_str, t_max, t_min = day
-        line = f"{d_str}: {t_min}/{t_max}C"
-        fb.text(line, 10, y_pos, 0x00)
-        y_pos += 15
+    if message:
+        # --- MESSAGE MODE ---
+        # Draw a box
+        fb.rect(5, 90, 118, 180, 0x00)
+        
+        # Word wrap logic is complex, so for now we just draw 
+        # multiple lines if it's long (manual splitting) or just truncate.
+        # Let's assume the user sends "Line1 Line2" separated by spaces or newlines?
+        # Actually `font_zh` doesn't support newlines.
+        
+        # Simple Center Draw
+        font_zh.draw_text(fb, "Message:", 10, 100)
+        
+        # Split by spaces to fake wrapping
+        words = message.split(' ')
+        y = 130
+        x = 10
+        for word in words:
+            if x + (len(word)*16) > 118:
+                x = 10
+                y += 20
+            font_zh.draw_text(fb, word, x, y)
+            x += (len(word) * 16) + 8 # +8 for space
+            
+    else:
+        # --- WEATHER MODE ---
+        # Weather Box
+        fb.rect(10, 80, 108, 60, 0x00)
+        
+        # Location: Beijing
+        font_zh.draw_text(fb, "北京", 15, 90)
+        
+        # Temp
+        fb.text(f"{weather_api.cache['temp']} C", 60, 94, 0x00)
+        
+        # Condition (Chinese)
+        desc = weather_api.cache["desc"]
+        font_zh.draw_text(fb, desc, 15, 115)
+        
+        # Forecast Section (Start at Y=150)
+        y_pos = 150
+        # Title: Weather Forecast
+        font_zh.draw_text(fb, "天气预报", 10, y_pos)
+        
+        fb.hline(10, y_pos + 20, 108, 0x00)
+        y_pos += 25
+        
+        for day in weather_api.cache.get("forecast", []):
+            d_str, t_max, t_min = day
+            line = f"{d_str}: {t_min}/{t_max}C"
+            fb.text(line, 10, y_pos, 0x00)
+            y_pos += 15
 
     # Footer (System Status)
-    # Simple line at bottom
     fb.hline(0, 280, 128, 0x00)
     import gc
     mem_free = gc.mem_free() // 1024
     
-    # "剩余内存" (Free Memory)
     font_zh.draw_text(fb, "剩余内存:", 5, 282)
-    # Draw number after the text (4 chars * 16px = 64px offset)
     fb.text(f"{mem_free}k", 75, 285, 0x00)
 
     # Send to Display

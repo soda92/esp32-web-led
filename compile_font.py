@@ -31,39 +31,46 @@ def get_chinese_chars(directory="."):
     return sorted(list(chinese_chars))
 
 def render_char_bitmap(font, char):
-    """Renders a character to a bit bytearray."""
-    # Create a blank image (white on black, 1-bit)
-    image = Image.new("1", (FONT_SIZE, FONT_SIZE), 0)
+    """Renders a character to a bit bytearray (0=Black/Text, 1=White/Background)."""
+    # Create a blank image (White background = 1)
+    image = Image.new("1", (FONT_SIZE, FONT_SIZE), 1)
     draw = ImageDraw.Draw(image)
     
-    # Draw text centered (or top-left depending on font metrics)
-    # Noto CJK usually needs a small offset to align well in 16x16
-    draw.text((0, -2), char, font=font, fill=1)
+    # Calculate centering
+    try:
+        # getbbox returns (left, top, right, bottom)
+        bbox = font.getbbox(char)
+        if bbox:
+            box_h = bbox[3] - bbox[1]
+            # Center vertically: (16 - height) // 2
+            # We also subtract bbox[1] (top) to shift the glyph up/down correctly
+            y_offset = ((FONT_SIZE - box_h) // 2) - bbox[1]
+        else:
+            y_offset = -1 # Fallback
+    except Exception:
+        y_offset = -1
+
+    # Draw text (Black = 0)
+    draw.text((0, y_offset), char, font=font, fill=0)
     
-    # Extract bytes
-    # Framebuf MONO_HLSB: Each byte is 8 horizontal pixels. 
-    # Row 0: Byte 0 (Px 0-7), Byte 1 (Px 8-15)
+    # Extract bytes for MONO_HLSB
     pixels = image.load()
     buffer = bytearray()
     
     for y in range(FONT_SIZE):
         byte_val = 0
         for x in range(0, 8):
-            if pixels[x, y]:
+            if pixels[x, y]: # If pixel is 1 (White)
                 byte_val |= (1 << (7 - x))
         buffer.append(byte_val)
         
         byte_val = 0
         for x in range(8, 16):
             if pixels[x, y]:
-                byte_val |= (1 << (15 - x)) # Fix: 15-x to map 8->7, 9->6... 
-                # Wait, x is 8..15. 
-                # bit 7 is pixel 8. bit 0 is pixel 15.
-                # So shift is 7 - (x - 8) = 15 - x. Correct.
+                byte_val |= (1 << (15 - x))
         buffer.append(byte_val)
         
     return buffer
-
 def generate_font_file(chars):
     print(f"Generating {OUTPUT_FILE} with {len(chars)} characters: {''.join(chars)}")
     
