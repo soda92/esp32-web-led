@@ -1,4 +1,5 @@
 import os
+import glob
 import sys
 import getpass
 import keyring
@@ -33,10 +34,7 @@ def get_credentials():
     return ssid, password
 
 
-def inject_secrets(file_path, ssid, password):
-    with open(file_path, "r") as f:
-        content = f.read()
-
+def inject_secrets(content, ssid, password):
     # Replace placeholders
     new_content = content.replace(
         'WIFI_SSID = "YOUR_WIFI_NAME"', f'WIFI_SSID = "{ssid}"'
@@ -44,7 +42,6 @@ def inject_secrets(file_path, ssid, password):
     new_content = new_content.replace(
         'WIFI_PASS = "YOUR_WIFI_PASSWORD"', f'WIFI_PASS = "{password}"'
     )
-
     return new_content
 
 
@@ -75,12 +72,24 @@ def main():
         return
 
     try:
-        # 1. Upload Driver (il3820.py) - no changes needed
-        flash_file(pyb, "il3820.py")
+        # Get all .py files
+        py_files = glob.glob("*.py")
+        
+        # Exclude this script
+        current_script = os.path.basename(__file__)
+        if current_script in py_files:
+            py_files.remove(current_script)
 
-        # 2. Upload Main (main.py) - with injected secrets
-        main_content = inject_secrets("main.py", ssid, password)
-        flash_file(pyb, "main.py", content=main_content)
+        for filename in py_files:
+            with open(filename, 'r') as f:
+                content = f.read()
+            
+            # Inject secrets into config.py (or main.py for backward compat if config.py doesn't exist yet)
+            if filename == "config.py" or (filename == "main.py" and "WIFI_SSID =" in content):
+                content = inject_secrets(content, ssid, password)
+                flash_file(pyb, filename, content=content)
+            else:
+                flash_file(pyb, filename)
 
         print("Upload complete.")
 
