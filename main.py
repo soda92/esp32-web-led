@@ -10,6 +10,7 @@ import web_server
 import time
 import config
 import sd_manager
+import logger
 
 # --- Hardware Setup (Relocated for SD Card) ---
 # SCK=4, MOSI=5, CS=6, DC=7, BUSY=16
@@ -68,32 +69,39 @@ async def ui_task():
         await uasyncio.sleep(0.1)
 
 async def main_loop():
-    print("Init System...")
+    logger.info("Init System...")
     
-    # Init SD Card (Optional, don't crash if fails)
-    sd_manager.mount_sd()
+    # Init SD Card
+    if sd_manager.mount_sd():
+        logger.info("SD Mounted")
+    else:
+        logger.info("SD Mount Failed (Skipping)")
     
     epd.init()
 
     # Initial Connection
     if wifi_manager.connect():
         led_manager.led_syncing()
-        # time_manager.sync() -> merged:
         import ntptime
-        try: ntptime.settime()
-        except: pass
+        try: 
+            ntptime.settime()
+            logger.info("Time Synced")
+        except: 
+            logger.error("Time Sync Failed")
         
         weather_api.update()
         led_manager.led_off()
+    else:
+        logger.error("WiFi Connect Failed")
     
-    # Start Web Server (Background Task)
+    # Start Web Server
     uasyncio.create_task(web_server.start_server())
     
     uasyncio.create_task(heartbeat_task())
     uasyncio.create_task(weather_task())
     uasyncio.create_task(ui_task())
     
-    print(f"System Running. Free RAM: {gc.mem_free()}")
+    logger.info(f"System Running. Free RAM: {gc.mem_free()}")
     while True:
         await uasyncio.sleep(3600)
         gc.collect()
@@ -103,6 +111,13 @@ def main():
         uasyncio.run(main_loop())
     except KeyboardInterrupt:
         print("Stopped")
+    except Exception as e:
+        logger.error(f"CRASH: {e}")
+        # Log traceback if possible?
+        # sys.print_exception(e) # to stdout
+        # We can't easily capture full traceback to string in MicroPython without io.StringIO
+        time.sleep(5)
+        machine.reset()
 
 if __name__ == "__main__":
     main()

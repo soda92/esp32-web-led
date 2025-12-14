@@ -4,10 +4,10 @@ import os
 import wifi_manager
 import led_manager
 import machine
-import time
 import auth_manager
 import ubinascii
-import hashlib
+import logger
+
 
 # Increase Body Limit for OTA
 Request.max_content_length = 1024 * 1024
@@ -35,6 +35,17 @@ async def check_auth(request):
         return {'error': 'unauthorized'}, 401
 
 # --- Auth API ---
+
+
+# ... existing imports ...
+
+@app.route('/api/logs', methods=['GET', 'DELETE'])
+async def api_logs(request):
+    if request.method == 'DELETE':
+        logger.clear()
+        return {'status': 'cleared'}
+    else:
+        return {'logs': logger.get_logs()}
 
 @app.route('/api/auth/status')
 async def auth_status(request):
