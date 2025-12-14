@@ -2,9 +2,12 @@
 import { ref, onMounted, reactive } from 'vue'
 import ControlPanel from './components/ControlPanel.vue'
 import WiFiSetup from './components/WiFiSetup.vue'
+import Login from './components/Login.vue'
+import AuthSetup from './components/AuthSetup.vue'
 
-const uiMode = ref('control')
-const loading = ref(true)
+// View State: 'loading', 'auth-setup', 'login', 'app'
+const view = ref('loading')
+const uiMode = ref('control') // app tabs
 
 // Global State
 const appState = reactive({
@@ -16,61 +19,111 @@ const appState = reactive({
   storage: { free: 0, total: 0 }
 })
 
-const fetchData = async () => {
+// Helper for Authenticated Requests
+const apiFetch = async (url, options = {}) => {
+  const token = localStorage.getItem('token')
+  const headers = { ...options.headers }
+  if (token) headers['X-Token'] = token
+  
+  const res = await fetch(url, { ...options, headers })
+  if (res.status === 401) {
+    view.value = 'login'
+    throw new Error('Unauthorized')
+  }
+  return res
+}
+
+const checkAuth = async () => {
   try {
-    const [msgRes, ledRes] = await Promise.all([
-      fetch('/api/message'),
-      fetch('/api/settings')
-    ])
+    // 1. Check if setup is needed
+    const statusRes = await fetch('/api/auth/status')
+    const statusData = await statusRes.json()
     
-    const msgData = await msgRes.json()
-    const ledData = await ledRes.json()
-    
-    appState.message = msgData.message
-    appState.led = ledData.led
-    appState.brightness = ledData.brightness
-    appState.mode = ledData.mode
-    appState.colors = ledData.colors || [[0,0,0],[0,0,0],[0,0,0],[0,0,0]]
-    appState.storage = { 
-        free: ledData.storage_free || 0, 
-        total: ledData.storage_total || 0 
+    if (!statusData.setup) {
+      view.value = 'auth-setup'
+      return
     }
     
-    loading.value = false
+    // 2. Try to fetch data with token
+    await fetchData()
+    view.value = 'app'
+    
   } catch (e) {
-    console.error("Fetch error", e)
+    // fetchData handles 401 redirect
+    console.log("Auth check failed", e)
   }
+}
+
+const fetchData = async () => {
+  const [msgRes, ledRes] = await Promise.all([
+    apiFetch('/api/message'),
+    apiFetch('/api/settings')
+  ])
+  
+  const msgData = await msgRes.json()
+  const ledData = await ledRes.json()
+  
+  appState.message = msgData.message
+  appState.led = ledData.led
+  appState.brightness = ledData.brightness
+  appState.mode = ledData.mode
+  appState.colors = ledData.colors || [[0,0,0],[0,0,0],[0,0,0],[0,0,0]]
+  appState.storage = { 
+      free: ledData.storage_free || 0, 
+      total: ledData.storage_total || 0 
+  }
+}
+
+const handleLogin = (token) => {
+  view.value = 'loading'
+  fetchData().then(() => view.value = 'app')
+}
+
+const handleSetupComplete = () => {
+  view.value = 'login'
 }
 
 onMounted(() => {
   if (window.location.hostname === '192.168.4.1') {
-    uiMode.value = 'setup'
+    // AP Mode: Show WiFi Setup directly? Or still require auth?
+    // Let's require auth for security even in AP mode.
   }
-  fetchData()
-  setInterval(fetchData, 5000)
+  checkAuth()
+  
+  // Poll only if logged in
+  setInterval(() => {
+    if (view.value === 'app') fetchData()
+  }, 5000)
 })
 </script>
 
 <template>
   <div class="container">
-    <header>
-      <h1>📡 ESP32 Hub</h1>
-      <div class="main-tabs">
-        <button :class="{active: uiMode==='control'}" @click="uiMode='control'">Control</button>
-        <button :class="{active: uiMode==='setup'}" @click="uiMode='setup'">WiFi Setup</button>
-      </div>
-    </header>
-
-    <main v-if="loading" class="loading">Loading...</main>
+    <div v-if="view === 'loading'" class="loading">Loading...</div>
     
-    <main v-else>
-      <ControlPanel v-if="uiMode === 'control'" :state="appState" @refresh="fetchData" />
-      <WiFiSetup v-if="uiMode === 'setup'" />
-    </main>
+    <AuthSetup v-else-if="view === 'auth-setup'" @setup-complete="handleSetupComplete" />
+    
+    <Login v-else-if="view === 'login'" @login="handleLogin" />
+    
+    <div v-else-if="view === 'app'">
+      <header>
+        <h1>📡 ESP32 Hub</h1>
+        <div class="main-tabs">
+          <button :class="{active: uiMode==='control'}" @click="uiMode='control'">Control</button>
+          <button :class="{active: uiMode==='setup'}" @click="uiMode='setup'">WiFi Setup</button>
+        </div>
+      </header>
+
+      <main>
+        <ControlPanel v-if="uiMode === 'control'" :state="appState" @refresh="fetchData" />
+        <WiFiSetup v-if="uiMode === 'setup'" />
+      </main>
+    </div>
   </div>
 </template>
 
 <style>
+/* ... (Keep existing styles) ... */
 :root { --primary: #007bff; --bg: #f4f6f8; --card-bg: #ffffff; --text: #2c3e50; --border: #e1e4e8; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 20px; color: var(--text); }
 .container { max-width: 480px; margin: 0 auto; }

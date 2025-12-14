@@ -17,13 +17,18 @@ def prepare_build():
     if not os.path.exists("secret.key"):
         print("Generating Keys...")
         subprocess.run([sys.executable, "tools/keygen.py"], check=True)
+
+    # 0b. Generate Serial if needed
+    if not os.path.exists("serial.txt"):
+        print("Generating Serial...")
+        subprocess.run([sys.executable, "tools/factory_setup.py"], check=True)
     
     # 1. Build Frontend
     print("Building Frontend...")
     subprocess.run(["npm", "run", "build"], cwd="frontend", check=True)
     
     # 2. Copy Source Files
-    sources = glob.glob("*.py") + glob.glob("*.json") + ["secret.key"]
+    sources = glob.glob("*.py") + glob.glob("*.json") + ["secret.key", "serial.txt"]
     for src in sources:
         if src == os.path.basename(__file__): continue
         shutil.copy(src, os.path.join(BUILD_DIR, src))

@@ -1,5 +1,6 @@
 font_zh.py
 /www
+/serial.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

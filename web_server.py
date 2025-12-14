@@ -5,6 +5,9 @@ import wifi_manager
 import led_manager
 import machine
 import time
+import auth_manager
+import ubinascii
+import hashlib
 
 # Increase Body Limit for OTA
 Request.max_content_length = 1024 * 1024
@@ -12,13 +15,88 @@ Request.max_body_length = 1024 * 1024
 
 app = Microdot()
 
-# --- API Endpoints ---
+sessions = set()
+
+def get_token(request):
+    return request.headers.get("X-Token")
+
+@app.before_request
+async def check_auth(request):
+    path = request.path
+    # Public paths
+    if path.startswith("/assets") or path == "/" or path == "/index.html" or path == "/setup":
+        return
+    if path.startswith("/api/auth"):
+        return
+    
+    # Check Token
+    token = get_token(request)
+    if not token or token not in sessions:
+        return {'error': 'unauthorized'}, 401
+
+# --- Auth API ---
+
+@app.route('/api/auth/status')
+async def auth_status(request):
+    return {'setup': auth_manager.is_setup()}
+
+@app.route('/api/auth/setup', methods=['POST'])
+async def auth_setup(request):
+    if auth_manager.is_setup():
+        return {'error': 'already setup'}, 403
+    
+    data = request.json
+    password = data.get("password")
+    if not password: return {'error': 'missing password'}, 400
+    
+    auth_manager.set_password(password)
+    return {'status': 'ok'}
+
+@app.route('/api/auth/login', methods=['POST'])
+async def auth_login(request):
+    data = request.json
+    password = data.get("password")
+    if auth_manager.verify_password(password):
+        # Generate simple token (random hex)
+        token = ubinascii.hexlify(os.urandom(16)).decode()
+        sessions.add(token)
+        return {'token': token}
+    else:
+        return {'error': 'invalid password'}, 401
+
+@app.route('/api/auth/reset', methods=['POST'])
+async def auth_reset(request):
+    data = request.json
+    serial = data.get("serial")
+    if auth_manager.factory_reset(serial):
+        return {'status': 'reset'}
+    else:
+        return {'error': 'invalid serial'}, 403
+
+# --- Key Management ---
+
+@app.route('/api/ota/key', methods=['POST'])
+async def api_ota_key(request):
+    try:
+        key_data = request.body
+        if len(key_data) != 32:
+            if len(key_data) == 64:
+                try: key_data = ubinascii.unhexlify(key_data)
+                except: pass
+        
+        with open("secret.key", "w") as f:
+            f.write(key_data.hex()) 
+            
+        return {'status': 'key updated'}
+    except Exception as e:
+        return {'error': str(e)}, 500
+
+# --- Existing API ---
 
 @app.route('/api/message', methods=['GET', 'POST'])
 async def api_message(request):
     global custom_message
     if request.method == 'POST':
-        print(f"Message POST: {request.json}") # Debug
         try:
             data = request.json
             if data is None:
@@ -36,14 +114,12 @@ async def api_message(request):
 @app.route('/api/settings', methods=['GET', 'POST'])
 async def api_settings(request):
     if request.method == 'POST':
-        print(f"Settings POST: {request.json}") # Debug
         try:
             data = request.json
             if data is None: 
                 return {'error': 'no json'}, 400
                 
             if "led" in data:
-                print(f"Toggle LED: {data['led']}")
                 led_manager.toggle(data["led"])
             if "brightness" in data:
                 led_manager.set_brightness(data["brightness"])
@@ -54,7 +130,6 @@ async def api_settings(request):
                 led_manager.set_manual_pixel(p.get("index", 0), p.get("r", 0), p.get("g", 0), p.get("b", 0))
             return {'status': 'ok'}
         except Exception as e:
-            print(f"Settings Error: {e}")
             return {'error': str(e)}, 400
     else:
         s = os.statvfs('/')
@@ -71,11 +146,7 @@ async def api_settings(request):
 async def api_display_image(request):
     global custom_message
     try:
-        # Request body is raw bytes
-        # Microdot 2.x: request.body is bytes if content-type is not json
         data = request.body
-        
-        # 128 * 296 / 8 = 4736 bytes
         if len(data) != 4736:
             return {'error': f'Invalid size: {len(data)}, expected 4736'}, 400
             
@@ -115,17 +186,13 @@ async def api_ota(request):
     import ubinascii
     
     try:
-        # 1. Get Signature
         sig_hex = request.headers.get('X-Signature')
         if not sig_hex:
             return {'error': 'missing signature'}, 400
             
         signature = ubinascii.unhexlify(sig_hex)
-        
-        # 2. Save Zip
         zip_data = request.body
         
-        # 3. Verify & Install
         if ota_manager.verify_and_install(zip_data, signature):
             return {'status': 'updating'}
         else:
@@ -135,27 +202,30 @@ async def api_ota(request):
         print(f"OTA Error: {e}")
         return {'error': str(e)}, 500
 
+@app.route('/api/scan')
+async def api_scan(request):
+    try:
+        networks = wifi_manager.scan_networks()
+        return ujson.dumps(networks), 200, {'Content-Type': 'application/json'}
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 # --- Static File Serving ---
 
 @app.route('/')
 async def index(request):
-    # Serve different apps based on mode? Or just one Unified App?
-    # Let's serve the main app.
     return send_file('www/index.html')
 
 @app.route('/setup')
 async def setup_page(request):
-    # In AP mode, redirect here? Or just handle in frontend router?
     return send_file('www/index.html') 
 
 @app.route('/assets/<path:path>')
 async def static_assets(request, path):
-    # Serve JS/CSS from www/assets/
     return send_file('www/assets/' + path)
 
 @app.route('/<path:path>')
 async def static_root(request, path):
-    # Fallback for other files like favicon.ico
     return send_file('www/' + path)
 
 # Global State
