@@ -1,102 +1,98 @@
-import usocket
+import uasyncio
 import os
 import ujson
 
 # Global State
 custom_message = ""
 
-def setup():
-    s = usocket.socket(usocket.AF_INET, usocket.SOCK_STREAM)
-    s.setsockopt(usocket.SOL_SOCKET, usocket.SO_REUSEADDR, 1)
-    s.bind(('', 80))
-    s.listen(1)
-    s.settimeout(0) # Non-blocking
-    print("Web Server Started on Port 80")
-    return s
-
-def send_response(client, code, content_type, body):
+async def send_response(writer, code, content_type, body):
     header = f"HTTP/1.1 {code}\r\nContent-Type: {content_type}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n"
-    client.write(header.encode())
-    client.write(body)
+    await writer.awrite(header.encode())
+    await writer.awrite(body)
 
-def handle_request(client):
+async def handle_client(reader, writer):
     global custom_message
     try:
-        # Read Request (First 1KB is usually enough for headers)
-        request = client.read(1024)
+        request = await reader.read(1024)
         if not request:
+            writer.close()
+            await writer.wait_closed()
             return
 
         req_str = request.decode('utf-8')
-        method, path, _ = req_str.split(' ', 2)
+        try:
+            method, path, _ = req_str.split(' ', 2)
+        except ValueError:
+            # Malformed request
+            writer.close()
+            await writer.wait_closed()
+            return
         
         # --- API: Get/Set Message ---
         if path.startswith("/api/message"):
             if method == "POST":
                 # Find body
-                headers, body = req_str.split("\r\n\r\n", 1)
                 try:
+                    headers, body = req_str.split("\r\n\r\n", 1)
                     data = ujson.loads(body)
                     custom_message = data.get("message", "")
                     print(f"New Message: {custom_message}")
-                    send_response(client, "200 OK", "application/json", '{"status": "ok"}'.encode())
+                    await send_response(writer, "200 OK", "application/json", '{"status": "ok"}'.encode())
                 except:
-                    send_response(client, "400 Bad Request", "application/json", '{"error": "invalid json"}'.encode())
+                    await send_response(writer, "400 Bad Request", "application/json", '{"error": "invalid json"}'.encode())
             else:
                 # GET
                 resp = ujson.dumps({"message": custom_message})
-                send_response(client, "200 OK", "application/json", resp.encode())
+                await send_response(writer, "200 OK", "application/json", resp.encode())
+            
+            writer.close()
+            await writer.wait_closed()
             return
 
         # --- Static File Serving ---
         if path == "/" or path == "/index.html":
             file_path = "index.html"
         else:
-            # Simple security: don't allow going up directories
             file_path = path.lstrip("/")
             if ".." in file_path:
-                send_response(client, "403 Forbidden", "text/plain", b"Forbidden")
+                await send_response(writer, "403 Forbidden", "text/plain", b"Forbidden")
+                writer.close()
+                await writer.wait_closed()
                 return
 
         # Try to serve file
         try:
-            # Check if file exists
             os.stat(file_path) 
             
-            # Determine content type
             ctype = "text/plain"
-            if file_path.endswith(".html"):
-                ctype = "text/html"
-            elif file_path.endswith(".css"):
-                ctype = "text/css"
-            elif file_path.endswith(".js"):
-                ctype = "application/javascript"
-            elif file_path.endswith(".json"):
-                ctype = "application/json"
+            if file_path.endswith(".html"): ctype = "text/html"
+            elif file_path.endswith(".css"): ctype = "text/css"
+            elif file_path.endswith(".js"): ctype = "application/javascript"
+            elif file_path.endswith(".json"): ctype = "application/json"
             
-            # Serve file (streamed in chunks to save RAM)
-            client.write(f"HTTP/1.1 200 OK\r\nContent-Type: {ctype}\r\nConnection: close\r\n\r\n".encode())
+            # Send Header
+            # We don't send Content-Length for streamed files usually, or we calculate it first
+            # Simplified header for streaming
+            header = f"HTTP/1.1 200 OK\r\nContent-Type: {ctype}\r\nConnection: close\r\n\r\n"
+            await writer.awrite(header.encode())
+            
+            # Stream file
             with open(file_path, "rb") as f:
                 while True:
                     chunk = f.read(512)
-                    if not chunk:
-                        break
-                    client.write(chunk)
+                    if not chunk: break
+                    await writer.awrite(chunk)
                     
         except OSError:
-            send_response(client, "404 Not Found", "text/plain", b"File Not Found")
+            await send_response(writer, "404 Not Found", "text/plain", b"File Not Found")
 
     except Exception as e:
         print(f"Web Error: {e}")
     finally:
-        client.close()
+        writer.close()
+        await writer.wait_closed()
 
-def check(server_socket):
-    """Call this frequently in the main loop"""
-    try:
-        client, addr = server_socket.accept()
-        # client.settimeout(2.0) # Give client 2s to send data
-        handle_request(client)
-        return True 
-    except OSError:
-        return False
+async def start_server():
+    print("Starting Async Web Server on Port 80...")
+    await uasyncio.start_server(handle_client, "0.0.0.0", 80)
+
