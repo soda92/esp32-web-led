@@ -4,6 +4,7 @@ import sys
 import getpass
 import keyring
 import time
+import subprocess
 from ampy.pyboard import Pyboard
 from ampy.files import Files
 
@@ -60,6 +61,10 @@ def main():
     if not os.path.exists(PORT):
         print(f"Error: Device {PORT} not found.")
         return
+
+    # Compile Fonts First
+    print("Compiling Fonts...")
+    subprocess.run([sys.executable, "compile_font.py"], check=True)
 
     ssid, password = get_credentials()
 
