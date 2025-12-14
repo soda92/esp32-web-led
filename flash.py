@@ -3,6 +3,7 @@ import glob
 import sys
 import time
 import shutil
+import subprocess
 from ampy.pyboard import Pyboard
 from ampy.files import Files
 
@@ -15,6 +16,11 @@ def flash_file(board, local_path, remote_path):
     print(f"Uploading {remote_path}...")
     files = Files(board)
     with open(local_path, "rb") as f:
+        # Create directory if needed (simplistic check)
+        if "/" in remote_path:
+            parent = remote_path.rsplit("/", 1)[0]
+            try: files.mkdir(parent)
+            except: pass
         files.put(remote_path, f.read())
 
 def prepare_build():
@@ -22,31 +28,56 @@ def prepare_build():
         shutil.rmtree(BUILD_DIR)
     os.makedirs(BUILD_DIR)
     
-    # Copy files
-    sources = glob.glob("*.py") + glob.glob("*.html") + glob.glob("*.json")
-    myself = os.path.basename(__file__)
-    if myself in sources:
-        sources.remove(myself)
-        
+    # 1. Build Frontend
+    print("Building Frontend...")
+    subprocess.run(["npm", "run", "build"], cwd="frontend", check=True)
+    
+    # 2. Copy Source Files
+    sources = glob.glob("*.py") + glob.glob("*.json")
     for src in sources:
+        if src == os.path.basename(__file__): continue
         shutil.copy(src, os.path.join(BUILD_DIR, src))
         
-    return sources
+    # 3. Copy Microdot Lib
+    # Find it dynamically or hardcode path found earlier
+    microdot_path = ".venv/lib/python3.13/site-packages/microdot/microdot.py"
+    if os.path.exists(microdot_path):
+        shutil.copy(microdot_path, os.path.join(BUILD_DIR, "microdot.py"))
+    else:
+        print("Warning: microdot.py not found!")
+
+    # 4. Copy WWW (Static Assets)
+    if os.path.exists("www"):
+        shutil.copytree("www", os.path.join(BUILD_DIR, "www"))
 
 def clean_board(board):
-    print("Cleaning board (removing .mpy garbage)...")
+    print("Cleaning board (removing obsolete)...")
     files = Files(board)
     try:
+        # Recursive delete is hard with ampy, just delete top level .py/.mpy
         board_files = files.ls()
         for f in board_files:
             f = f.strip().lstrip("/")
-            # Delete any .mpy file found
-            if f.endswith(".mpy"):
-                print(f"Deleting obsolete: {f}")
+            if f.endswith(".mpy") or f.endswith(".py"):
+                # Don't delete boot.py if we are not uploading it (we aren't)
+                if f == "boot.py": continue
                 try: files.rm(f)
                 except: pass
-    except Exception as e:
-        print(f"Error listing files: {e}")
+    except:
+        pass
+
+def upload_recursive(board, local_dir, remote_prefix=""):
+    files_to_upload = glob.glob(os.path.join(local_dir, "*"))
+    for local_path in files_to_upload:
+        filename = os.path.basename(local_path)
+        if filename == "compile_font.py": continue
+        
+        remote_path = os.path.join(remote_prefix, filename)
+        
+        if os.path.isdir(local_path):
+            upload_recursive(board, local_path, remote_path)
+        else:
+            flash_file(board, local_path, remote_path)
 
 def main():
     if not os.path.exists(PORT):
@@ -56,7 +87,6 @@ def main():
     print("Preparing Build Directory...")
     prepare_build()
     
-    # 1. Compile Fonts (Source Gen)
     print("Compiling Fonts...")
     subprocess.run([sys.executable, "compile_font.py"], cwd=BUILD_DIR, check=True)
     
@@ -69,32 +99,18 @@ def main():
         return
 
     try:
-        # 2. Clean old .mpy files
+        # Clean Source Files (Code)
         clean_board(pyb)
         
-        # 3. Upload Source Files
-        files_to_upload = glob.glob(os.path.join(BUILD_DIR, "*"))
-        
-        # Add font binary
-        if os.path.exists(os.path.join(BUILD_DIR, "font_data.bin")):
-            if os.path.join(BUILD_DIR, "font_data.bin") not in files_to_upload:
-                files_to_upload.append(os.path.join(BUILD_DIR, "font_data.bin"))
-        
-        for local_path in files_to_upload:
-            filename = os.path.basename(local_path)
-            if filename == "compile_font.py":
-                continue
-            
-            flash_file(pyb, local_path, filename)
+        # Upload Everything
+        print("Uploading Files...")
+        upload_recursive(pyb, BUILD_DIR)
 
         print("Upload complete.")
-
-        # 4. Soft Reset
         print("Resetting board...")
         pyb.exit_raw_repl()
         pyb.serial.write(b"\x04")
 
-        # 5. Monitor Output
         print("--- Serial Output (Monitoring for 10s) ---")
         start_time = time.time()
         while time.time() - start_time < 10:
@@ -113,5 +129,4 @@ def main():
         pyb.close()
 
 if __name__ == "__main__":
-    import subprocess # Import missing module
     main()
