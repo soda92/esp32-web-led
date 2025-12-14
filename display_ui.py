@@ -75,39 +75,57 @@ def draw_screen(epd, time_str, date_str, message=""):
             
     else:
         # --- WEATHER MODE ---
-        # Weather Box
-        fb.rect(10, 80, 108, 60, 0x00)
+        # Weather Box (Visual separator optional, let's remove the box outline for a cleaner look or keep it?)
+        # Let's keep the area clear but remove the rect outline to let text breathe
+        # fb.rect(0, 80, 108, 60, 0x00)
         
-        # Location: Beijing
-        font_zh.draw_text(fb, "北京", 15, 90)
+        # 1. Location: Beijing (Centered)
+        # "北京" is 32px wide. Screen 128. (128-32)/2 = 48
+        font_zh.draw_text(fb, "北京", 48, 90)
         
-        # Temp
-        fb.text(f"{weather_api.cache['temp']} C", 60, 94, 0x00)
+        # 2. Temp (Centered)
+        temp_str = f"{weather_api.cache['temp']} C"
+        temp_w = len(temp_str) * 8
+        temp_x = (128 - temp_w) // 2
+        fb.text(temp_str, temp_x, 108, 0x00)
         
-        # Condition (Chinese)
+        # 3. Condition (Chinese) (Centered)
         desc = weather_api.cache["desc"]
-        font_zh.draw_text(fb, desc, 15, 115)
+        # Assuming desc is all Chinese chars (16px each)
+        # Note: If it mixes ASCII it might be off, but usually it's 1-3 Chinese chars
+        desc_w = len(desc) * 16
+        desc_x = (128 - desc_w) // 2
+        font_zh.draw_text(fb, desc, desc_x, 126)
         
-        # Forecast Section (Start at Y=150)
-        y_pos = 150
+        # 4. Forecast Section
+        y_pos = 155
         # Title: Weather Forecast
-        font_zh.draw_text(fb, "天气预报", 10, y_pos)
+        font_zh.draw_text(fb, "天气预报", 5, y_pos)
+        fb.hline(5, y_pos + 18, 118, 0x00)
         
-        fb.hline(10, y_pos + 20, 108, 0x00)
         y_pos += 25
-        
         for day in weather_api.cache.get("forecast", []):
             d_str, t_max, t_min = day
             line = f"{d_str}: {t_min}/{t_max}C"
-            fb.text(line, 10, y_pos, 0x00)
+            # Draw at x=0 to maximize width
+            fb.text(line, 0, y_pos, 0x00)
             y_pos += 15
+
+    # --- GAP FILLER (RAM) ---
+    import gc
+    mem_free = gc.mem_free() // 1024
+    ram_str = f"RAM: {mem_free} KB"
+    ram_w = len(ram_str) * 8
+    ram_x = (128 - ram_w) // 2
+    # Position in the gap (approx y=230 to 270)
+    fb.text(ram_str, ram_x, 240, 0x00)
 
     # Footer (System Status)
     fb.hline(0, 280, 128, 0x00)
     
-    # Draw IP Address (Small font)
+    # Draw IP Address (No prefix, start at edge)
     ip = wifi_manager.ip_address
-    fb.text(f"IP: {ip}", 5, 285, 0x00)
+    fb.text(ip, 0, 285, 0x00)
 
     # Send to Display
     epd._command(0x4E, bytearray([0x00]))
