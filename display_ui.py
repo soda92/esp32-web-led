@@ -51,12 +51,30 @@ def draw_screen(epd, time_str, date_str, message=""):
         fb.fill_rect(0, 0, 128, 24, 0x00)
         fb.text(date_str, 25, 8, 0xFF)
 
-        # Big Time (Always Visible)
-        draw_big_text(fb, time_str, 19, 40, scale=3)
-
+            # Big Time (Always Visible)
+            # Actually, if showing full screen image, maybe hide time?
+            # Let's hide time if image mode.
+            
+        if message == "__IMAGE__":
+            # --- IMAGE MODE ---
+            try:
+                with open('image.bin', 'rb') as f:
+                    f.readinto(buf)
+                # Just display it
+                epd._command(0x4E, bytearray([0x00]))
+                epd._command(0x4F, bytearray([0x00, 0x00]))
+                epd.set_frame_memory(buf)
+                epd.display_frame()
+                return # Exit early
+            except Exception as e:
+                print(f"Load Image Error: {e}")
+                message = "Image Error" # Fallback to text
+    
+            # Normal Time Draw (if not image)
+            draw_big_text(fb, time_str, 19, 40, scale=3)
+        
         if message:
-            # --- MESSAGE MODE ---
-            # Draw a box
+            # --- MESSAGE MODE ---            # Draw a box
             fb.rect(5, 90, 118, 180, 0x00)
             font_zh.draw_text(fb, "Message:", 10, 100)
             

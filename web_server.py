@@ -63,12 +63,27 @@ async def api_settings(request):
             "storage_total": s[0] * s[2]
         }
 
-@app.route('/api/scan')
-async def api_scan(request):
+@app.route('/api/display/image', methods=['POST'])
+async def api_display_image(request):
+    global custom_message
     try:
-        networks = wifi_manager.scan_networks()
-        return ujson.dumps(networks), 200, {'Content-Type': 'application/json'}
+        # Request body is raw bytes
+        # Microdot 2.x: request.body is bytes if content-type is not json
+        data = request.body
+        
+        # 128 * 296 / 8 = 4736 bytes
+        if len(data) != 4736:
+            return {'error': f'Invalid size: {len(data)}, expected 4736'}, 400
+            
+        with open('image.bin', 'wb') as f:
+            f.write(data)
+            
+        custom_message = "__IMAGE__"
+        print("Image Received and Saved")
+        return {'status': 'ok'}
+        
     except Exception as e:
+        print(f"Image Upload Error: {e}")
         return {'error': str(e)}, 500
 
 @app.route('/api/wifi', methods=['POST'])

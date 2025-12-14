@@ -9,13 +9,14 @@ import led_manager
 import web_server
 import time
 import config
+import sd_manager
 
-# --- Hardware Setup (ESP32-S3 Top-Left) ---
-# SCK=12, MOSI=11, CS=10, DC=14, BUSY=13
-spi = machine.SPI(1, baudrate=2000000, polarity=0, phase=0, sck=machine.Pin(12), mosi=machine.Pin(11))
-cs = machine.Pin(10, machine.Pin.OUT)
-dc = machine.Pin(14, machine.Pin.OUT)
-busy = machine.Pin(13, machine.Pin.IN)
+# --- Hardware Setup (Relocated for SD Card) ---
+# SCK=4, MOSI=5, CS=6, DC=7, BUSY=16
+spi = machine.SPI(1, baudrate=2000000, polarity=0, phase=0, sck=machine.Pin(4), mosi=machine.Pin(5))
+cs = machine.Pin(6, machine.Pin.OUT)
+dc = machine.Pin(7, machine.Pin.OUT)
+busy = machine.Pin(16, machine.Pin.IN)
 
 epd = il3820.EPD(spi, cs, dc, busy, rst=None)
 
@@ -68,6 +69,10 @@ async def ui_task():
 
 async def main_loop():
     print("Init System...")
+    
+    # Init SD Card (Optional, don't crash if fails)
+    sd_manager.mount_sd()
+    
     epd.init()
 
     # Initial Connection

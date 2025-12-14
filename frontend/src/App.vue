@@ -13,9 +13,109 @@ const sending = ref(false)
 const wifiNetworks = ref([])
 const scanning = ref(false)
 const wifiForm = reactive({ ssid: '', password: '' })
+const processing = ref(false)
 
 // Mode: 'control' or 'setup'
 const uiMode = ref('control')
+
+const processImage = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  processing.value = true
+  
+  const img = new Image()
+  img.src = URL.createObjectURL(file)
+  
+  img.onload = async () => {
+    const width = 128
+    const height = 296
+    
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    
+    // Fill white first
+    ctx.fillStyle = 'white'
+    ctx.fillRect(0, 0, width, height)
+    
+    // Draw image (cover/contain)
+    // Scale logic: preserving aspect ratio
+    const scale = Math.max(width / img.width, height / img.height)
+    const x = (width / 2) - (img.width / 2) * scale
+    const y = (height / 2) - (img.height / 2) * scale
+    ctx.drawImage(img, x, y, img.width * scale, img.height * scale)
+    
+    const imageData = ctx.getImageData(0, 0, width, height)
+    const data = imageData.data
+    
+    // Floyd-Steinberg Dithering
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4
+        const oldPixel = (data[idx] + data[idx+1] + data[idx+2]) / 3
+        const newPixel = oldPixel < 128 ? 0 : 255
+        const quantError = oldPixel - newPixel
+        
+        // Set pixel to BW
+        data[idx] = data[idx+1] = data[idx+2] = newPixel
+        
+        // Diffuse error
+        if (x + 1 < width) {
+          const i = (y * width + x + 1) * 4
+          const v = (data[i] + data[i+1] + data[i+2]) / 3 + quantError * 7 / 16
+          data[i] = data[i+1] = data[i+2] = v
+        }
+        if (x - 1 >= 0 && y + 1 < height) {
+          const i = ((y + 1) * width + x - 1) * 4
+          const v = (data[i] + data[i+1] + data[i+2]) / 3 + quantError * 3 / 16
+          data[i] = data[i+1] = data[i+2] = v
+        }
+        if (y + 1 < height) {
+          const i = ((y + 1) * width + x) * 4
+          const v = (data[i] + data[i+1] + data[i+2]) / 3 + quantError * 5 / 16
+          data[i] = data[i+1] = data[i+2] = v
+        }
+        if (x + 1 < width && y + 1 < height) {
+          const i = ((y + 1) * width + x + 1) * 4
+          const v = (data[i] + data[i+1] + data[i+2]) / 3 + quantError * 1 / 16
+          data[i] = data[i+1] = data[i+2] = v
+        }
+      }
+    }
+    
+    // Pack bits (MONO_HLSB: 1=White, 0=Black)
+    // Actually E-ink usually treats 1=White, 0=Black? Or inverted?
+    // In our font compiler we used 1=White.
+    const buffer = new Uint8Array(width * height / 8)
+    for (let i = 0; i < width * height; i++) {
+        const pixelIdx = i * 4
+        // If > 128, it's White (1). Else Black (0).
+        const val = data[pixelIdx] > 128 ? 1 : 0
+        
+        const byteIdx = Math.floor(i / 8)
+        const bitIdx = 7 - (i % 8)
+        
+        if (val) {
+            buffer[byteIdx] |= (1 << bitIdx)
+        }
+    }
+    
+    // Upload
+    try {
+        await fetch('/api/display/image', {
+            method: 'POST',
+            body: buffer
+        })
+        currentMessage.value = "__IMAGE__"
+    } catch (e) {
+        alert("Upload failed")
+    } finally {
+        processing.value = false
+    }
+  }
+}
 
 const fetchData = async () => {
   try {
@@ -143,6 +243,14 @@ onMounted(() => {
           <button @click="updateMessage" :disabled="sending">Send</button>
         </div>
         <button class="secondary" @click="clearMessage">Clear</button>
+      </div>
+
+      <div class="card">
+        <h2>🖼️ Upload Image</h2>
+        <div class="upload-box">
+          <input type="file" accept="image/*" @change="processImage" :disabled="sending">
+          <p v-if="processing">Processing...</p>
+        </div>
       </div>
 
       <div class="card">
