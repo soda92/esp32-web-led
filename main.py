@@ -92,9 +92,11 @@ async def main_loop():
         weather_api.update()
         led_manager.led_off()
     else:
-        logger.error("WiFi Connect Failed")
+        # AP Mode started
+        import dnserver
+        dnserver.start(wifi_manager.ip_address)
     
-    # Start Web Server
+    # Start Web Server (Background Task)
     uasyncio.create_task(web_server.start_server())
     
     uasyncio.create_task(heartbeat_task())

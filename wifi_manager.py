@@ -61,13 +61,13 @@ def start_ap():
     
     ap = network.WLAN(network.AP_IF)
     ap.active(True)
-    ap.config(essid="ESP-Setup", authmode=network.AUTH_OPEN)
+    ap.config(essid="InkFrame-Setup", authmode=network.AUTH_OPEN)
     
     while ap.active() == False:
         pass
         
     ip_address = ap.ifconfig()[0]
-    print(f"AP Started. Connect to 'ESP-Setup'. IP: {ip_address}")
+    print(f"AP Started. Connect to 'InkFrame-Setup'. IP: {ip_address}")
     
     led_manager.breathe(255, 0, 255, cycles=3, speed=0.02)
     led_manager.set_led(50, 0, 50)
@@ -90,6 +90,12 @@ def connect():
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
     
+    # Set Hostname (mDNS usually follows this)
+    try:
+        wlan.config(hostname="inkframe")
+    except:
+        pass
+    
     if not wlan.isconnected():
         wlan.connect(ssid, password)
 
@@ -104,6 +110,7 @@ def connect():
         ip_address = wlan.ifconfig()[0]
         is_ap_mode = False
         print(f"Connected! IP: {ip_address}")
+        print("Try http://inkframe.local")
         led_manager.led_wifi_success()
         return True
     else:

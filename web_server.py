@@ -237,7 +237,20 @@ async def static_assets(request, path):
 
 @app.route('/<path:path>')
 async def static_root(request, path):
-    return send_file('www/' + path)
+    # Fallback logic
+    if path in ["generate_204", "hotspot-detect.html", "canonical.html", "ncsi.txt"]:
+        # Captive Portal Probes
+        # Redirect to root
+        return '', 302, {'Location': '/'}
+        
+    try:
+        # Try to serve file
+        return send_file('www/' + path)
+    except:
+        # If 404, just serve index? Or let it 404?
+        # For SPA (Vue Router), we usually serve index.html.
+        # Let's serve index.html if file missing
+        return send_file('www/index.html')
 
 # Global State
 custom_message = ""
