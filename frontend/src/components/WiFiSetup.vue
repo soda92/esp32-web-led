@@ -4,6 +4,7 @@ import { ref, reactive } from 'vue'
 const wifiNetworks = ref([])
 const scanning = ref(false)
 const wifiForm = reactive({ ssid: '', password: '' })
+const uploadingKey = ref(false)
 
 const scanWifi = async () => {
   scanning.value = true
@@ -30,6 +31,27 @@ const saveWifi = async () => {
     alert("Error saving")
   }
 }
+
+const uploadKey = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  uploadingKey.value = true
+  try {
+    const buffer = await file.arrayBuffer()
+    const res = await fetch('/api/ota/key', {
+      method: 'POST',
+      body: buffer
+    })
+    if (res.ok) alert("Key Updated!")
+    else alert("Failed to update key")
+  } catch (e) {
+    alert("Upload error")
+  } finally {
+    uploadingKey.value = false
+    event.target.value = ''
+  }
+}
 </script>
 
 <template>
@@ -50,6 +72,17 @@ const saveWifi = async () => {
       <button class="primary full-width" @click="saveWifi">Save & Connect</button>
     </div>
   </div>
+
+  <div class="card">
+    <h2>🔐 OTA Security</h2>
+    <p class="hint">Upload a new <code>secret.key</code> to enable custom firmware updates.</p>
+    <div class="upload-area">
+      <label class="file-label">
+        <input type="file" @change="uploadKey" :disabled="uploadingKey">
+        <span>{{ uploadingKey ? 'Uploading...' : 'Upload Key File' }}</span>
+      </label>
+    </div>
+  </div>
 </template>
 
 <style scoped>
@@ -60,4 +93,6 @@ const saveWifi = async () => {
 .ssid { font-weight: 500; }
 .rssi { font-size: 0.8rem; color: #888; background: #eee; padding: 2px 6px; border-radius: 4px; }
 .form input { margin-bottom: 10px; }
+.upload-area { border: 2px dashed #e1e4e8; border-radius: 12px; padding: 20px; text-align: center; }
+.hint { font-size: 0.9rem; color: #666; margin-bottom: 15px; }
 </style>
