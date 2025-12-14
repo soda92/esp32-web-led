@@ -23,25 +23,54 @@ def save_config(ssid, password):
         ujson.dump(data, f)
     print("WiFi Config Saved")
 
+def scan_networks():
+    print("Scanning networks...")
+    sta = network.WLAN(network.STA_IF)
+    sta.active(True)
+    
+    try:
+        networks = sta.scan() # Returns list of tuples
+    except Exception as e:
+        print(f"Scan failed: {e}")
+        return []
+        
+    # Format: (ssid, bssid, channel, RSSI, authmode, hidden)
+    result = []
+    for n in networks:
+        ssid = n[0].decode('utf-8')
+        if not ssid: continue # Skip hidden
+        
+        result.append({
+            "ssid": ssid,
+            "rssi": n[3],
+            "auth": n[4] # 0=Open, other=Secure
+        })
+        
+    # Sort by Signal Strength
+    result.sort(key=lambda x: x["rssi"], reverse=True)
+    return result
+
 def start_ap():
     global ip_address, is_ap_mode
     print("Starting AP Mode...")
     is_ap_mode = True
     
+    # ESP32 can do AP+STA. We ensure STA is active for scanning later.
+    sta = network.WLAN(network.STA_IF)
+    sta.active(True)
+    
     ap = network.WLAN(network.AP_IF)
     ap.active(True)
     ap.config(essid="ESP-Setup", authmode=network.AUTH_OPEN)
     
-    # Wait for IP (usually 192.168.4.1)
     while ap.active() == False:
         pass
         
     ip_address = ap.ifconfig()[0]
     print(f"AP Started. Connect to 'ESP-Setup'. IP: {ip_address}")
     
-    # Purple Pulse to indicate Setup Mode
     led_manager.breathe(255, 0, 255, cycles=3, speed=0.02)
-    led_manager.set_led(50, 0, 50) # Solid Purple
+    led_manager.set_led(50, 0, 50)
 
 def connect():
     global ip_address, is_ap_mode

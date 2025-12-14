@@ -49,6 +49,20 @@ async def handle_client(reader, writer):
         if content_length > 0:
             body = await reader.readexactly(content_length)
         
+        # --- API: WiFi Scan ---
+        if path.startswith("/api/scan"):
+            try:
+                networks = wifi_manager.scan_networks()
+                resp = ujson.dumps(networks)
+                await send_response(writer, "200 OK", "application/json", resp.encode())
+            except Exception as e:
+                print(f"Scan Error: {e}")
+                await send_response(writer, "500 Error", "application/json", b'[]')
+            
+            writer.close()
+            await writer.wait_closed()
+            return
+
         # --- API: WiFi Setup ---
         if path.startswith("/api/wifi"):
             if method == "POST":
