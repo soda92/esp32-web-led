@@ -34,11 +34,6 @@ async def check_auth(request):
     if not token or token not in sessions:
         return {'error': 'unauthorized'}, 401
 
-# --- Auth API ---
-
-
-# ... existing imports ...
-
 @app.route('/api/logs', methods=['GET', 'DELETE'])
 async def api_logs(request):
     if request.method == 'DELETE':
@@ -49,7 +44,11 @@ async def api_logs(request):
 
 @app.route('/api/auth/status')
 async def auth_status(request):
-    return {'setup': auth_manager.is_setup()}
+    try:
+        return {'setup': auth_manager.is_setup()}
+    except Exception as e:
+        print(f"Auth Status Error: {e}")
+        return {'error': str(e)}, 500
 
 @app.route('/api/auth/setup', methods=['POST'])
 async def auth_setup(request):

@@ -9,8 +9,15 @@ SERIAL_FILE = "serial.txt"
 def hash_password(password):
     return ubinascii.hexlify(hashlib.sha256(password.encode()).digest()).decode()
 
+def file_exists(path):
+    try:
+        os.stat(path)
+        return True
+    except OSError:
+        return False
+
 def is_setup():
-    return os.path.exists(AUTH_FILE)
+    return file_exists(AUTH_FILE)
 
 def set_password(password):
     p_hash = hash_password(password)
